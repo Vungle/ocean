@@ -1,8 +1,5 @@
 from loguru import logger
-from github.core.exporters.workflow_runs_exporter import RestWorkflowRunExporter
-from github.core.options import SingleWorkflowRunOptions
 from github.webhook.events import WORKFLOW_DELETE_EVENTS
-from github.clients.client_factory import create_github_client
 from github.webhook.webhook_processors.workflow_run.base_workflow_run_webhook_processor import (
     BaseWorkflowRunWebhookProcessor,
 )
@@ -32,35 +29,23 @@ class WorkflowRunWebhookProcessor(BaseWorkflowRunWebhookProcessor):
                 updated_raw_results=[], deleted_raw_results=[]
             )
 
+        enriched = enrich_with_organization(
+            enrich_with_repository(workflow_run, repo["name"], repo=repo),
+            organization,
+        )
+
         if action in WORKFLOW_DELETE_EVENTS:
             logger.info(
                 f"Workflow run {workflow_run['name']} was deleted from organization: {organization}"
             )
-
-            data_to_delete = enrich_with_organization(
-                enrich_with_repository(workflow_run, repo["name"], repo=repo),
-                organization,
-            )
-
             return WebhookEventRawResults(
-                updated_raw_results=[], deleted_raw_results=[data_to_delete]
-            )
-
-        exporter = RestWorkflowRunExporter(create_github_client())
-        options = SingleWorkflowRunOptions(
-            organization=organization, repo_name=repo["name"], run_id=workflow_run["id"]
-        )
-
-        data_to_upsert = await exporter.get_resource(options)
-        if not data_to_upsert:
-            return WebhookEventRawResults(
-                updated_raw_results=[], deleted_raw_results=[]
+                updated_raw_results=[], deleted_raw_results=[enriched]
             )
 
         logger.info(
-            f"Workflow run {data_to_upsert['name']} of organization: {organization} was upserted"
+            f"Workflow run {workflow_run['name']} of organization: {organization} was upserted"
         )
 
         return WebhookEventRawResults(
-            updated_raw_results=[data_to_upsert], deleted_raw_results=[]
+            updated_raw_results=[enriched], deleted_raw_results=[]
         )
